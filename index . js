@@ -1,0 +1,59 @@
+const { default: makeWASocket, useMultiFileAuthState, DisconnectReason, fetchLatestBaileysVersion } = require('@whiskeysockets/baileys');
+const { GoogleGenAI } = require('@google/genai');
+
+const geminiApiKey = process.env.GEMINI_API_KEY;
+const ai = new GoogleGenAI({ apiKey: geminiApiKey });
+
+async function startBot() {
+    const { state, saveCreds } = await useMultiFileAuthState('auth_info');
+    const { version } = await fetchLatestBaileysVersion();
+
+    const sock = makeWASocket({
+        version,
+        auth: state,
+        printQRInTerminal: true
+    });
+
+    sock.ev.on('creds.update', saveCreds);
+
+    sock.ev.on('connection.update', (update) => {
+        const { connection, lastDisconnect } = update;
+        if (connection === 'close') {
+            const shouldReconnect = (lastDisconnect?.error?.output?.statusCode !== DisconnectReason.loggedOut);
+            console.log('কানেকশন বিচ্ছিন্ন হয়েছে। আবার চেষ্টা করা হচ্ছে...', shouldReconnect);
+            if (shouldReconnect) startBot();
+        } else if (connection === 'open') {
+            console.log('হোয়াটসঅ্যাপ বট সফলভাবে কানেক্ট হয়েছে!');
+        }
+    });
+
+    sock.ev.on('messages.upsert', async ({ messages, type }) => {
+        if (type !== 'notify') return;
+
+        for (const msg of messages) {
+            if (!msg.message || msg.key.fromMe) continue;
+
+            const from = msg.key.remoteJid;
+            const text = msg.message.conversation || msg.message.extendedTextMessage?.text || '';
+
+            if (!text) continue;
+
+            try {
+                const response = await ai.models.generateContent({
+                    model: 'gemini-2.5-flash',
+                    contents: text,
+                    config: {
+                        systemInstruction: "তুমি একজন অত্যন্ত বিনয়ী এবং দক্ষ অনলাইন সেলস সহকারী। কাস্টমারের সাথে বাংলায় খুব সুন্দর ও সহজ ভাষায় কথা বলো এবং তাদের সাহায্য করো।"
+                    }
+                });
+
+                const replyText = response.text;
+                await sock.sendMessage(from, { text: replyText });
+            } catch (err) {
+                console.error('Gemini Error:', err);
+            }
+        }
+    });
+}
+
+startBot();
