@@ -1,8 +1,12 @@
 const { default: makeWASocket, useMultiFileAuthState, DisconnectReason, fetchLatestBaileysVersion } = require('@whiskeysockets/baileys');
-const { GoogleGenAI } = require('@google/genai');
+const { GoogleGenerativeAI } = require('@google/generative-ai');
 
 const geminiApiKey = process.env.GEMINI_API_KEY;
-const ai = new GoogleGenAI({ apiKey: geminiApiKey });
+const genAI = new GoogleGenerativeAI(geminiApiKey);
+const model = genAI.getGenerativeModel({ 
+    model: "gemini-1.5-flash",
+    systemInstruction: "তুমি একজন অত্যন্ত বিনয়ী এবং দক্ষ অনলাইন সেলস সহকারী। কাস্টমারের সাথে বাংলায় খুব সুন্দর ও সহজ ভাষায় কথা বলো এবং তাদের সাহায্য করো।"
+});
 
 async function startBot() {
     const { state, saveCreds } = await useMultiFileAuthState('auth_info');
@@ -39,15 +43,8 @@ async function startBot() {
             if (!text) continue;
 
             try {
-                const response = await ai.models.generateContent({
-                    model: 'gemini-2.5-flash',
-                    contents: text,
-                    config: {
-                        systemInstruction: "তুমি একজন অত্যন্ত বিনয়ী এবং দক্ষ অনলাইন সেলস সহকারী। কাস্টমারের সাথে বাংলায় খুব সুন্দর ও সহজ ভাষায় কথা বলো এবং তাদের সাহায্য করো।"
-                    }
-                });
-
-                const replyText = response.text;
+                const result = await model.generateContent(text);
+                const replyText = result.response.text();
                 await sock.sendMessage(from, { text: replyText });
             } catch (err) {
                 console.error('Gemini Error:', err);
